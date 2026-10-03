@@ -1,7 +1,8 @@
 {
   "name": "flor-proof-backend",
+  "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "ethers": "^6.13.4"
+    "ethers": "^6.13.0"
   }
 }
