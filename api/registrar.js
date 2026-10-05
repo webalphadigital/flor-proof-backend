@@ -3,9 +3,12 @@ const { ethers } = require("ethers");
 const crypto = require("crypto");
 
 const ABI = [
-  "function declararLote((string idLote,string variedad,string zona,string temporada,uint32 paquetes,uint64 fechaCosecha,uint16 vidaUtilDias) d) returns (bytes32)",
-  "error NoEsProductor()", "error DatosInvalidos()", "error LoteYaExiste()"
+  "function declararLote((string idLote,string variedad,string zona,string temporada,uint32 paquetes,uint64 fechaCosecha,uint16 vidaUtilDias) d)",
+  "error NoEsProductor()",
+  "error DatosInvalidos()",
+  "error LoteYaExiste()"
 ];
+
 const VARIEDADES = ["Gladiolos", "Rosas", "Claveles", "Lilium", "Gerberas"];
 const ZONAS = ["Ramal - Yuto", "Quebrada - Maimara", "Quebrada - Tilcara", "Valles - Perico"];
 const MENSAJES = {
@@ -26,77 +29,59 @@ function claveDe(codigo) {
   return null;
 }
 
+const err = (res, code, msg) => res.status(code).json({ error: msg });
+
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", process.env.ORIGEN_PERMITIDO || "https://webalphadigital.github.io");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido" });
+  if (req.method !== "POST") return err(res, 405, "Método no permitido");
 
   const iface = new ethers.Interface(ABI);
 
   try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+    const b = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
 
-    // 1) Código de acceso -> clave de firma (solo vive en las variables de Vercel)
-    const clave = claveDe(body.codigo);
-    if (!clave) return res.status(401).json({ error: "Código de acceso incorrecto." });
+    const clave = claveDe(b.codigo);
+    if (!clave) return err(res, 401, "Código de acceso incorrecto.");
     if (!process.env.CONTRACT_ADDRESS) {
       console.error("Falta la variable CONTRACT_ADDRESS");
-      return res.status(500).json({ error: "Servidor mal configurado." });
+      return err(res, 500, "Servidor mal configurado.");
     }
 
-    // 2) Validaciones básicas
-    if (body.variedad !== undefined && !VARIEDADES.includes(body.variedad)) {
-      return res.status(400).json({ error: "Variedad no válida." });
-    }
-    if (body.zona !== undefined && !ZONAS.includes(body.zona)) {
-      return res.status(400).json({ error: "Zona no válida." });
-    }
+    const idLote = String(b.idLote || "").trim();
+    const temporada = String(b.temporada || "").trim();
+    if (!idLote || idLote.length > 60) return err(res, 400, "Código de lote vacío o demasiado largo.");
+    if (!/^[A-Za-z0-9._-]+$/.test(idLote)) return err(res, 400, "El código de lote solo admite letras, números, punto, guion y guion bajo.");
+    if (!VARIEDADES.includes(b.variedad)) return err(res, 400, "Variedad no válida.");
+    if (!ZONAS.includes(b.zona)) return err(res, 400, "Zona no válida.");
+    if (!temporada || temporada.length > 60) return err(res, 400, "Temporada vacía o demasiado larga.");
 
-    // 3) Armar los datos del lote leyendo los campos desde el propio ABI
-    const campos = iface.getFunction("declararLote").inputs[0].components;
-    const valores = [];
-    for (const campo of campos) {
-      let v = body[campo.name];
-      if (v === undefined || v === null || String(v).trim() === "") {
-        return res.status(400).json({ error: "Falta el campo: " + campo.name });
-      }
-      if (campo.type.startsWith("uint")) {
-        // Acepta fecha AAAA-MM-DD y la convierte a segundos
-        if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
-          v = Math.floor(new Date(v + "T00:00:00Z").getTime() / 1000);
-        }
-        try { v = BigInt(v); } catch (e) {
-          return res.status(400).json({ error: "Número inválido en: " + campo.name });
-        }
-        if (v < 0n) return res.status(400).json({ error: "Número inválido en: " + campo.name });
-      } else {
-        v = String(v).trim();
-        if (v.length > 100) return res.status(400).json({ error: "Texto demasiado largo en: " + campo.name });
-      }
-      valores.push(v);
-    }
+    const paquetes = Number(b.paquetes), vida = Number(b.vidaUtilDias);
+    if (!Number.isInteger(paquetes) || paquetes < 1 || paquetes > 1000000) return err(res, 400, "Cantidad de paquetes no válida.");
+    if (!Number.isInteger(vida) || vida < 1 || vida > 365) return err(res, 400, "Vida útil no válida (1 a 365 días).");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.fechaCosecha))) return err(res, 400, "Fecha de cosecha no válida.");
+    const fecha = Math.floor(new Date(b.fechaCosecha + "T00:00:00Z").getTime() / 1000);
+    if (!Number.isFinite(fecha) || fecha <= 0) return err(res, 400, "Fecha de cosecha no válida.");
 
-    // 4) Firmar y enviar con la wallet de la productora
     const provider = new ethers.JsonRpcProvider(process.env.RPC_URL || "https://testnet-rpc.monad.xyz");
     const wallet = new ethers.Wallet(clave, provider);
     const contrato = new ethers.Contract(process.env.CONTRACT_ADDRESS, ABI, wallet);
 
-    const tx = await contrato.declararLote(valores);
+    const tx = await contrato.declararLote([idLote, b.variedad, b.zona, temporada, paquetes, fecha, vida]);
     await tx.wait();
 
-    return res.status(200).json({ ok: true, hash: tx.hash, idLote: body.idLote });
+    return res.status(200).json({ ok: true, hash: tx.hash, idLote });
   } catch (e) {
-    // Errores del contrato (productora no autorizada, lote repetido, datos inválidos)
     let nombre = e && e.revert && e.revert.name;
     if (!nombre && e && e.data) {
       try { nombre = iface.parseError(e.data).name; } catch (_) {}
     }
-    if (nombre && MENSAJES[nombre]) return res.status(400).json({ error: MENSAJES[nombre] });
+    if (nombre && MENSAJES[nombre]) return err(res, 400, MENSAJES[nombre]);
 
     console.error("Error al registrar:", e && e.message);
-    return res.status(500).json({ error: "No se pudo registrar el lote. Intenta de nuevo." });
+    return err(res, 500, "No se pudo registrar el lote. Intenta de nuevo.");
   }
 };
