@@ -69,6 +69,7 @@ module.exports = async (req, res) => {
     const provider = new ethers.JsonRpcProvider(process.env.RPC_URL || "https://testnet-rpc.monad.xyz");
     const wallet = new ethers.Wallet(clave, provider);
     const contrato = new ethers.Contract(process.env.CONTRACT_ADDRESS, ABI, wallet);
+    console.log("DIAG wallet:", wallet.address, "contrato:", process.env.CONTRACT_ADDRESS);
 
     const tx = await contrato.declararLote([idLote, b.variedad, b.zona, temporada, paquetes, fecha, vida]);
     await tx.wait();
