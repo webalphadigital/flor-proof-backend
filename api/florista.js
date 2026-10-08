@@ -13,11 +13,11 @@ const ABI = [
 ];
 
 const MENSAJES = {
-  NoEsFloreria: "La wallet de esta florería todavía no está autorizada en el contrato.",
-  LoteNoExiste: "Ese lote no existe. Revisá el código.",
-  LoteYaConfirmado: "Ese lote ya fue confirmado.",
-  LoteNoConfirmadoPorEstaFloreria: "Primero tenés que confirmar la recepción de ese lote con esta florería.",
-  RamoYaExiste: "Ese código de ramo ya existe. Probá con otro."
+  NoEsFloreria: ["This florist's wallet is not yet authorized on the contract.", "La wallet de esta florería todavía no está autorizada en el contrato."],
+  LoteNoExiste: ["That batch does not exist. Check the code.", "Ese lote no existe. Revisá el código."],
+  LoteYaConfirmado: ["That batch was already confirmed.", "Ese lote ya fue confirmado."],
+  LoteNoConfirmadoPorEstaFloreria: ["You must first confirm receipt of that batch with this florist.", "Primero tenés que confirmar la recepción de ese lote con esta florería."],
+  RamoYaExiste: ["That bouquet code already exists. Try another one.", "Ese código de ramo ya existe. Probá con otro."]
 };
 
 // Cada florería tiene un código de acceso (CODIGO_F1..F5) y su propia clave de firma (CLAVE_F1..F5).
